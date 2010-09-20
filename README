@@ -1,0 +1,12 @@
+Diegows' toolbox
+----------------
+
+A collection of scripts that help/helped me in my work.
+
+diego@woitasen.com.ar
+http://github.com/diegows/toolbox
+
+mail/ - Mail scripts
+	get_mime_body_parts.py: Extracts mime attachs and body parts from emails.
+	send-mail.py: Sends mail with attachs from command line.
+
