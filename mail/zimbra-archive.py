@@ -2,6 +2,10 @@
 #
 # Zimbra message archiving for the Open Source edition
 #
+# Tested on Zimbra Open Source Edition 6.0.8.
+#
+# Requires Python 2.6.x and Sqlalchemy 0.5.8.
+#
 # zimbra-archive.py config.cfg
 #
 # Config example: ##########################
@@ -112,8 +116,8 @@ for i in range(1, 101):
     mboxgroup_db = SqlSoup(mboxgroup_uri)
 
     msg_filter = and_(mboxgroup_db.mail_item.volume_id != None,
-                        mboxgroup_db.mail_item.volume_id != archive_vol.id)
-                        #mboxgroup_db.mail_item.date < date)
+                        mboxgroup_db.mail_item.volume_id != archive_vol.id,
+                        mboxgroup_db.mail_item.date < date)
 
     for mail_item in mboxgroup_db.mail_item.filter(msg_filter).all():
         volume = get_volume(mail_item.volume_id)
