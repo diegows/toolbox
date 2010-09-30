@@ -97,6 +97,7 @@ def copy_compress(src, dst):
     dst_gzip = gzip.open(dst, 'wb')
     src_fd = open(src)
     dst_gzip.write(src_fd.read())
+    os.unlink(src)
 
 def set_perm(file_path):
     os.chown(file_path, zimbra_uid, zimbra_gid)
