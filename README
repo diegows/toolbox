@@ -8,6 +8,10 @@ http://github.com/diegows/toolbox
 
 mail/ - Mail scripts
 	get_mime_body_parts.py: Extracts mime attachs and body parts from emails.
+
 	send-mail.py: Sends mail with attachs from command line.
+
 	zimbra-archive.py: Zimbra message archiving for the open source edition.
+
+	delete-email.py: Borra los mensajes que coincidan con cierto subject y sender.
 
