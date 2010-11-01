@@ -14,6 +14,8 @@
 # days = 60
 # #Volumen name for archiving
 # volume = store2
+# #Set this to false if you want to do the archiving.
+# dry_run = true
 #
 # [db]
 # user = zimbra
@@ -48,6 +50,7 @@ db_pass = config.get('db', 'pass')
 db_socket = config.get('db', 'unix_socket')
 days = config.get('archiving', 'days')
 archive_vol_name = config.get('archiving', 'volume')
+dry_run = config.getboolean('archiving', 'dry_run')
 
 
 if not (db_user and db_pass and db_socket and days):
@@ -132,6 +135,9 @@ for i in range(1, 101):
         msg_archive_path = message_path(mail_item, archive_vol)
 
         print msg_path, msg_archive_path,
+        if dry_run:
+            print 'OK'
+            continue
 
         archive_dir_path = os.path.dirname(msg_archive_path)
         if not os.path.exists(archive_dir_path):
