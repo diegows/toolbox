@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python -u
 #
 # Zimbra message archiving for the Open Source edition
 #
@@ -134,26 +134,32 @@ for i in range(1, 101):
         msg_path = message_path(mail_item, volume)
         msg_archive_path = message_path(mail_item, archive_vol)
 
+        print mail_item
         print msg_path, msg_archive_path,
         if dry_run:
             print 'OK'
             continue
 
-        archive_dir_path = os.path.dirname(msg_archive_path)
-        if not os.path.exists(archive_dir_path):
-            mk_dir(archive_dir_path)
+        try:
+            archive_dir_path = os.path.dirname(msg_archive_path)
+            if not os.path.exists(archive_dir_path):
+                mk_dir(archive_dir_path)
 
-        if archive_vol.compress_blobs == 1 and \
-                mail_item.size > archive_vol.compression_threshold:
-            copy_compress(msg_path, msg_archive_path)
-            print 'zipped',
-        else:
-            shutil.move(msg_path, msg_archive_path)
+            if archive_vol.compress_blobs == 1 and \
+                    mail_item.size > archive_vol.compression_threshold:
+                copy_compress(msg_path, msg_archive_path)
+                print 'zipped',
+            else:
+                shutil.move(msg_path, msg_archive_path)
 
-        set_perm(msg_archive_path)
+            set_perm(msg_archive_path)
 
-        mail_item.volume_id = archive_vol.id
-        mboxgroup_db.commit()
+            mail_item.volume_id = archive_vol.id
+            mboxgroup_db.commit()
+
+        except IOError, e:
+            print 'ERROR:', e
+            continue
 
         print 'OK'
 
