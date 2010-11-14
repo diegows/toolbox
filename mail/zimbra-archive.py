@@ -16,7 +16,8 @@
 # volume = store2
 # #Set this to false if you want to do the archiving.
 # dry_run = true
-#
+# #Archiving only this mailbox ids (optional)
+# #mailboxes = 1,2,3,4
 # [db]
 # user = zimbra
 # pass = db_pass
@@ -31,6 +32,7 @@
 import sqlalchemy
 from sqlalchemy import and_
 from sqlalchemy.ext.sqlsoup import SqlSoup
+from sqlalchemy.orm.exc import NoResultFound
 from ConfigParser import ConfigParser
 from time import time
 
@@ -40,6 +42,7 @@ import os
 import shutil
 import pwd
 import sys
+import re
 
 config = ConfigParser()
 
@@ -51,6 +54,16 @@ db_socket = config.get('db', 'unix_socket')
 days = config.get('archiving', 'days')
 archive_vol_name = config.get('archiving', 'volume')
 dry_run = config.getboolean('archiving', 'dry_run')
+
+if config.has_option('archiving', 'mailboxes'):
+    mailboxes = config.get('archiving', 'mailboxes')
+    mailboxes = re.split('\s*,\s*', mailboxes)
+    for i in mailboxes:
+        if not i.isdigit():
+            print 'Mailboxes ids must be numbers.'
+            sys.exit(-1)
+else:
+    mailboxes = []
 
 
 if not (db_user and db_pass and db_socket and days):
@@ -123,7 +136,17 @@ for i in range(1, 101):
                         mboxgroup_db.mail_item.volume_id != archive_vol.id,
                         mboxgroup_db.mail_item.date < date)
 
-    for mail_item in mboxgroup_db.mail_item.filter(msg_filter).all():
+    if len(mailboxes) > 0:
+        msg_filter = and_(msg_filter,
+                        mboxgroup_db.mail_item.mailbox_id.in_(mailboxes))
+
+    try:
+        mail_items = mboxgroup_db.mail_item.filter(msg_filter).all()
+    except NoResultFound:
+        print 'No items in mboxgroup' + str(i)
+        continue
+
+    for mail_item in mail_items:
         volume = get_volume(mail_item.volume_id)
 
         if volume.compress_blobs == 1:
