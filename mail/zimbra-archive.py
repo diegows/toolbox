@@ -92,9 +92,13 @@ zimbra_user = pwd.getpwnam('zimbra')
 zimbra_uid = zimbra_user.pw_uid
 zimbra_gid = zimbra_user.pw_gid
 
+volume = False
 
 def get_volume(volume_id):
-    return zimbra_db.volume.filter(zimbra_db.volume.id == volume_id).one()
+    global volume
+    if not volume or volume.id != volume_id:
+        volume = zimbra_db.volume.filter(zimbra_db.volume.id == volume_id).one()
+    return volume
 
 def message_path(mail_item, volume):
     subfolder1 = mail_item.mailbox_id >> volume.mailbox_bits
