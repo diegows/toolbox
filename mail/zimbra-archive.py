@@ -18,6 +18,8 @@
 # dry_run = true
 # #Archiving only this mailbox ids (optional)
 # #mailboxes = 1,2,3,4
+# #Post archive command.
+# #command = /usr/local/bin/restart-zimbra.sh
 # [db]
 # user = zimbra
 # pass = db_pass
@@ -54,6 +56,7 @@ db_socket = config.get('db', 'unix_socket')
 days = config.get('archiving', 'days')
 archive_vol_name = config.get('archiving', 'volume')
 dry_run = config.getboolean('archiving', 'dry_run')
+command = config.getboolean('archiving', 'command')
 
 if config.has_option('archiving', 'mailboxes'):
     mailboxes = config.get('archiving', 'mailboxes')
@@ -65,6 +68,9 @@ if config.has_option('archiving', 'mailboxes'):
 else:
     mailboxes = []
 
+if not os.path.exists(command):
+    print "ERROR: command %s doesn't exists" % (command)
+    sys.exit(-1)
 
 if not (db_user and db_pass and db_socket and days):
     print 'Config error!'
@@ -187,5 +193,6 @@ for i in range(1, 101):
         print 'OK'
 
 
-os.system("su -c '/opt/zimbra/bin/zmmailboxdctl restart' zimbra")
+#Run command after archiving
+os.system(command)
 
