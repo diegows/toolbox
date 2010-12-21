@@ -20,6 +20,8 @@
 # #mailboxes = 1,2,3,4
 # #Post archive command.
 # #command = /usr/local/bin/restart-zimbra.sh
+# #Finish the archiving in "time" seconds"
+# time=14400
 # [db]
 # user = zimbra
 # pass = db_pass
@@ -37,6 +39,7 @@ from sqlalchemy.ext.sqlsoup import SqlSoup
 from sqlalchemy.orm.exc import NoResultFound
 from ConfigParser import ConfigParser
 from time import time
+from datetime import datetime
 
 import gzip
 import email
@@ -56,7 +59,8 @@ db_socket = config.get('db', 'unix_socket')
 days = config.get('archiving', 'days')
 archive_vol_name = config.get('archiving', 'volume')
 dry_run = config.getboolean('archiving', 'dry_run')
-command = config.getboolean('archiving', 'command')
+command = config.get('archiving', 'command')
+xtime = config.getint('archiving', 'time')
 
 if config.has_option('archiving', 'mailboxes'):
     mailboxes = config.get('archiving', 'mailboxes')
@@ -137,6 +141,7 @@ except sqlalchemy.orm.exc.NoResultFound:
     print "Archive volume doesn't exist"
     sys.exit(-1)
 
+start_time = datetime.now()
 
 for i in range(1, 101):
     mboxgroup_uri = mysql_uri % ('mboxgroup' + str(i))
@@ -195,8 +200,14 @@ for i in range(1, 101):
             continue
 
         print 'OK'
+        current_time = datetime.now()
+        diff_time = current_time - start_time
+        if diff_time.seconds > xtime:
+            print "Stopping archiving, time excedded."
+            break
 
 
 #Run command after archiving
 os.system(command)
+
 
