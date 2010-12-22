@@ -156,7 +156,7 @@ for i in range(1, 101):
                         mboxgroup_db.mail_item.mailbox_id.in_(mailboxes))
 
     try:
-        mail_items = mboxgroup_db.mail_item.filter(msg_filter).all()
+        mail_items = mboxgroup_db.mail_item.filter(msg_filter).yield_per(100)
     except NoResultFound:
         print 'No items in mboxgroup' + str(i)
         continue
@@ -172,8 +172,7 @@ for i in range(1, 101):
         msg_path = message_path(mail_item, volume)
         msg_archive_path = message_path(mail_item, archive_vol)
 
-        print mail_item
-        print msg_path, msg_archive_path,
+        print mail_item.id, mail_item.mailbox_id, msg_path, msg_archive_path,
         if dry_run:
             print 'OK'
             continue
