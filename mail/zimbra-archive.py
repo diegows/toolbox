@@ -142,6 +142,10 @@ except sqlalchemy.orm.exc.NoResultFound:
     sys.exit(-1)
 
 start_time = datetime.now()
+current_time = None
+archived_msgs = 0
+
+print 'Starting archiving -', start_time.isoformat()
 
 for i in range(1, 101):
     mboxgroup_uri = mysql_uri % ('mboxgroup' + str(i))
@@ -199,12 +203,17 @@ for i in range(1, 101):
             continue
 
         print 'OK'
+        archived_msgs += 1
         current_time = datetime.now()
         diff_time = current_time - start_time
         if diff_time.seconds > xtime:
             print "Stopping archiving, time excedded."
             break
 
+end_time = datetime.now()
+slapsed_time = end_time - start_time
+print 'Archiving finished -', end_time.isoformat()
+print 'Archived %d msgs in %s seconds.' % (archived_msgs, slapsed_time.seconds)
 
 #Run command after archiving
 os.system(command)
