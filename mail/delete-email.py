@@ -30,7 +30,7 @@ for mbox in imap.list()[1]:
                 if not dry_run:
                     print imap.store(num, '+FLAGS', '\\Deleted')
                     deleted += 1
-    except imap.error:
-        print 'ERROR', mbox
+    except imap.error, error:
+        print 'ERROR', mbox, error
         continue
 
