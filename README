@@ -15,3 +15,5 @@ mail/ - Mail scripts
 
 	delete-email.py: Borra los mensajes que coincidan con cierto subject y sender.
 
+squid/ - Squid scripts and classes
+	cache-mgr.py: Class to parse cache mgr output. Poor right now.
