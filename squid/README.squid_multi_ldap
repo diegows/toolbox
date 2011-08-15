@@ -1,0 +1,26 @@
+Squid Multi LDAP - LDAP Auth Helper that support severals LDAP servers
+
+1- Installation
+
+It requires python 2.5+ and python-ldap.
+
+2- Usage:
+
+In squid.conf:
+
+auth_param basic program /usr/local/bin/squid_multi_ldap.py
+
+Edit squid_multi_ldap.py and change the LDAP servers parameters. It supports
+more than one LDAP server, just add another ldap definition and add it to ldapses
+list.
+
+About suffix, it's used to identify which LDAP servers the user will use. For
+example, if suffix is @company1.com all users that identify as user@company.com
+will use that LDAP server. If suffix is '', that LDAP server will be the
+default.
+
+
+TODO:
+-Move configuration to a .ini file.
+-Documentation.
+
