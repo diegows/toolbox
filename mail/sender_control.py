@@ -6,6 +6,7 @@
 # "send on behalf of"/"send as" behavior of Microsoft Exchange on Kolab.
 #
 # Example configuration in master.cf
+# From Postfix to sender control
 #sender_control     unix  -       n       n       -       20       pipe user=kolab-n null_sender= argv=/usr/local/bin/sender_control.py
 #	--sender=${sender}
 #	--recipient=${recipient}
@@ -19,6 +20,23 @@
 #	--tmpdir=/var/spool/filter
 #	--smtp=localhost
 #	--smtpport=10025
+#From sender_control to Postfix
+#127.0.0.1:10025 inet n	-	n	-	-  smtpd
+#    -o content_filter=smtp-amavis:[127.0.0.1]:10024
+#    -o cleanup_service_name=post-cleanup
+#    -o local_recipient_maps=
+#    -o relay_recipient_maps=
+#    -o smtpd_restriction_classes=
+#    -o smtpd_client_restrictions=
+#    -o smtpd_helo_restrictions=
+#    -o smtpd_sender_restrictions=
+#    -o smtpd_recipient_restrictions=permit_mynetworks,reject
+#    -o mynetworks=127.0.0.0/8
+#    -o smtpd_authorized_xforward_hosts=127.0.0.0/8
+#    -o strict_rfc821_envelopes=yes
+#    -o smtpd_error_sleep_time=0
+#    -o smtpd_soft_error_limit=1001
+#    -o smtpd_hard_error_limit=1000
 #
 
 import sys
