@@ -1,0 +1,100 @@
+#!/bin/bash
+### BEGIN INIT INFO
+# Provides:          network-bridge-vlan-bonding
+# Required-Start:    
+# Required-Stop:     
+# Default-Start:     S
+# Default-Stop:      0 6
+# Short-Description: Starts bridges and vlans.
+### END INIT INFO
+#
+# Script que configura VLANS, bonding y una red de servidor para usar con Xen.
+# Fue mas dinamico hacerlo asi que hacerlo con el interfaces de Debian en su momento.
+#
+
+ACTION=$1
+FIRST_VLANID=200
+LAST_VLANID=212
+
+
+bonding_up(){
+
+	modprobe bonding 
+	ip link set dev bond0 up
+	ip link set dev bond1 up
+	ifenslave bond0 eth0
+	ifenslave bond0 eth2
+	ifenslave bond1 eth1
+	ifenslave bond1 eth3
+
+}
+
+bonding_down(){
+
+	ip link set dev bond0 down	
+	ip link set dev bond1 down	
+	#comentado, esto dispara un panic en el kernel
+	#rmmod bonding
+
+}
+
+servidores_up(){
+
+	brctl addbr servidores
+	brctl addif servidores bond0
+	ip link set servidores up
+
+}
+
+servidores_down(){
+
+	ip link set servidores down
+	brctl delif servidores bond0
+	brctl delbr servidores
+
+}
+
+set_vlan(){
+	case $ACTION in
+		start)
+			vconfig add bond1 $1
+			ip link set vlan$1 up
+			brctl addbr br.vlan$1
+			brctl addif br.vlan$1 vlan$1
+			ip link set br.vlan$1 up
+			;;
+		stop)
+			ip link set br.vlan$1 down
+			brctl delif br.vlan$1 vlan$1
+			brctl delbr br.vlan$1
+			ip link set vlan$1 down
+			vconfig rem vlan$1
+			;;
+	esac
+}
+
+vlans(){
+	test "$ACTION" = "start" && vconfig set_name_type VLAN_PLUS_VID_NO_PAD
+	for ((i = 200; i <= $LAST_VLANID; i++)); do
+		set_vlan $i
+	done
+}
+
+case $ACTION in
+	start) 
+		bonding_up
+		servidores_up
+		vlans
+		sleep 30
+		;;
+	stop) 
+		vlans
+		servidores_down
+		bonding_down
+		;;
+	*)
+		echo "$0 [start|stop] required"
+		exit 1
+		;;
+esac
+
