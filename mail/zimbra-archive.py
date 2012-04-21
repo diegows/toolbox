@@ -37,6 +37,7 @@ import sqlalchemy
 from sqlalchemy import and_
 from sqlalchemy.ext.sqlsoup import SqlSoup
 from sqlalchemy.orm.exc import NoResultFound
+from sqlalchemy.exc import OperationalError
 from ConfigParser import ConfigParser
 from time import time
 from datetime import datetime
@@ -147,13 +148,21 @@ archived_msgs = 0
 
 print 'Starting archiving -', start_time.isoformat()
 
-for i in range(1, 101):
+i = 1
+while True:
     mboxgroup_uri = mysql_uri % ('mboxgroup' + str(i))
     mboxgroup_db = SqlSoup(mboxgroup_uri)
 
-    msg_filter = and_(mboxgroup_db.mail_item.volume_id != None,
+    try:
+        msg_filter = and_(mboxgroup_db.mail_item.volume_id != None,
                         mboxgroup_db.mail_item.volume_id != archive_vol.id,
                         mboxgroup_db.mail_item.date < date)
+    except OperationalError, error:
+        if error.orig.args[0] == 1049:
+            break
+        else:
+            print 'DB Fatal error: ', error
+            sys.exit(-1)
 
     if len(mailboxes) > 0:
         msg_filter = and_(msg_filter,
@@ -209,6 +218,8 @@ for i in range(1, 101):
         if diff_time.seconds > xtime:
             print "Stopping archiving, time excedded."
             break
+
+    i += 1
 
 end_time = datetime.now()
 slapsed_time = end_time - start_time
