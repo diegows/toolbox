@@ -159,6 +159,7 @@ while True:
                         mboxgroup_db.mail_item.date < date)
     except OperationalError, error:
         if error.orig.args[0] == 1049:
+            #1049 means DB doesn't exists, so we've finished!
             break
         else:
             print 'DB Fatal error: ', error
@@ -213,11 +214,12 @@ while True:
 
         print 'OK'
         archived_msgs += 1
-        current_time = datetime.now()
-        diff_time = current_time - start_time
-        if diff_time.seconds > xtime:
-            print "Stopping archiving, time excedded."
-            break
+
+    current_time = datetime.now()
+    diff_time = current_time - start_time
+    if diff_time.seconds > xtime:
+        print "Stopping archiving, time excedded."
+        break
 
     i += 1
 
