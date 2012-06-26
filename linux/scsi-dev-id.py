@@ -5,16 +5,17 @@
 # Diego Woitasen - <diego@woitasen.com.ar>
 #
 
-from subprocess import Popen, PIPE
-from os import stat
-from stat import S_ISBLK
 import sys
 
 import pyudev
 import re
 
 def show_device(dev):
-    print dev.device_node, dev.get('ID_WWN', '-'), dev.get('ID_MODEL', '-')
+    print dev.device_node,
+    print dev.get('ID_SERIAL', '-'), 
+    print dev.get('ID_MODEL', '-'),
+    print dev.get('ID_VENDOR', '-'),
+    print
 
 context = pyudev.Context()
 dev_re = re.compile(sys.argv[1])
