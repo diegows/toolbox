@@ -14,7 +14,7 @@ import pyudev
 import re
 
 def show_device(dev):
-    print dev.device_node, dev['ID_WWN']
+    print dev.device_node, dev.get('ID_WWN', '-'), dev.get('ID_MODEL', '-')
 
 context = pyudev.Context()
 dev_re = re.compile(sys.argv[1])
