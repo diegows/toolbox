@@ -10,22 +10,15 @@ from os import stat
 from stat import S_ISBLK
 import sys
 
-if len(sys.argv) == 1:
-    print "Device(s) path required."
-    sys.exit(-1)
+import pyudev
+import re
 
-def get_id(device):
-    scsi_id_cmd = "/lib/udev/scsi_id --whitelisted --device="  + device
-    scsi_id = Popen(scsi_id_cmd.split(), stdout=PIPE)
-    return scsi_id.stdout.readline().strip()
+def show_device(dev):
+    print dev.device_node, dev['ID_WWN']
 
-def is_block(device):
-    dev_info = stat(device)
-    return S_ISBLK(dev_info.st_mode)
+context = pyudev.Context()
+dev_re = re.compile(sys.argv[1])
 
-for device in sys.argv[1:]:
-    if not is_block(device):
-        print "Device %s is not a block device." % (device)
-        sys.exit(-1)
-    print device, get_id(device)
-
+for dev in context.list_devices():
+    if dev.device_node is not None and dev_re.match(dev.device_node):
+        show_device(dev)
