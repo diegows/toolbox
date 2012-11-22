@@ -10,7 +10,143 @@ import sys
 import math
 from PyQt4.QtGui import *
 from PyQt4.QtCore import *
-import OsmApi
+from OsmApi import OsmApi
+import bsddb
+from copy import copy
+
+class OsmObject(object):
+    def __init__(self, osm_data = None):
+        """osm_data is the osm dictionary returned by OsmApi functions."""
+        if not hasattr(self, 'osm_attrs'):
+            self.osm_attrs = []
+        self.osm_attrs += [ 'id', 'user', 'uid', 'timestamp', 'visible',
+                            'version', 'changeset' ]
+
+        if osm_data:
+            self.load_osm_data(osm_data)
+
+    def load_osm_data(self, osm_data):
+        self.osm_data = osm_data
+        for attr in self.osm_attrs:
+            setattr(self, attr, osm_data[attr])
+
+        self.tags = osm_data.setdefault('tag', {})
+
+    def get_tag(self, name):
+        if name in self.tags:
+            return self.tags[name]
+        else:
+            return False
+
+
+class OsmNode(OsmObject):
+    def __init__(self, osm_data = None):
+        self.osm_attrs = [ 'lat', 'lon' ]
+        super(OsmNode, self).__init__(osm_data)
+
+    def load_osm_data(self, osm_data):
+        super(OsmNode, self).load_osm_data(osm_data)
+
+    def get_adjacent_nodes(self):
+        ways = osm_api.NodeWays(self.id)
+        self.adjacent_nodes = []
+        ways = osm_api.WaysGet(ways)
+        for way in ways:
+            for node in enumerate(way.nodes):
+                if node[1] == self.id:
+                    if node[0] > 0:
+                        self.adjacent_nodes.append(way.nodes[node[0]-1])
+                    if node[0] < len(way.nodes)-1:
+                        self.adjacent_nodes.append(way.nodes[node[0]+1])
+
+    def q_point(self):
+        return QPointF(self.lon, self.lat)
+
+class OsmWay(OsmObject):
+    def __init__(self, osm_data = None):
+        super(OsmWay, self).__init__(osm_data)
+
+    def load_osm_data(self, osm_data):
+        super(OsmWay, self).load_osm_data(osm_data)
+
+        if osm_data.has_key('nd'):
+            self.nodes = osm_data['nd']
+
+
+class MyOsmApi(OsmApi):
+    def __init__(self, *args, **kwargs):
+        super(MyOsmApi, self).__init__(*args, **kwargs)
+        self.ways_cache = {}
+        self.nodes_cache = {}
+        self.nodes_ways_cache = {}
+
+    def NodeWays(self, node_id):
+        if self.nodes_ways_cache.has_key(node_id):
+            return self.nodes_ways_cache[node_id]
+
+        ways = super(MyOsmApi, self).NodeWays(node_id)
+        way_ids = []
+        for way in ways:
+            way_ids.append(way['id'])
+        #cache ways here. I don't remember why I did this, review! :P
+        self.WaysGet(way_ids)
+        self.nodes_ways_cache[node_id] = way_ids
+
+        return way_ids
+
+    def WayGet(self, way_id):
+        if self.ways_cache.has_key(way_id):
+            return self.ways_cache[way_id]
+
+        way = super(MyOsmApi, self).WayGet(way_id)
+        way = OsmWay(way)
+        self.ways_cache[way_id] = way
+        return way
+
+    def NodeGet(self, node_id):
+        if self.nodes_cache.has_key(node_id):
+            return self.nodes_cache[node_id]
+
+        node = super(MyOsmApi, self).NodeGet(node_id)
+        node = OsmNode(node)
+        self.nodes_cache[node_id] = node
+        return node
+
+    def NodesGet(self, node_ids):
+        node_ids = copy(node_ids)
+        nodes = []
+        for node_id in node_ids:
+            if self.nodes_cache.has_key(node_id):
+                nodes.append(self.nodes_cache[node_id])
+                node_ids.remove(node_id)
+
+        if len(node_ids) > 0:
+            osm_nodes = super(MyOsmApi, self).NodesGet(node_ids)
+            for node_id, node_data in osm_nodes.iteritems():
+                node = OsmNode(node_data)
+                self.nodes_cache[node_id] = node
+                nodes.append(node)
+
+        return nodes
+
+    def WaysGet(self, way_ids):
+        way_ids = copy(way_ids)
+        ways = []
+        for way_id in way_ids:
+            if self.ways_cache.has_key(way_id):
+                ways.append(self.ways_cache[way_id])
+                way_ids.remove(way_id)
+
+        if len(way_ids) > 0:
+            osm_ways = super(MyOsmApi, self).WaysGet(way_ids)
+            for way_id, way_data in osm_ways.iteritems():
+                way = OsmWay(way_data)
+                self.ways_cache[way_id] = way
+                ways.append(way)
+
+        return ways
+
+
 
 class MiniWay(QLineF):
     DEST = 30
@@ -51,196 +187,138 @@ class MiniWay(QLineF):
         return self.line(45, 45, self.RIGHT)
 
 
-class Ways:
-    #Simple (name, id) way list
-    ways = False
+osm_api = MyOsmApi()
+DEST = 30
 
-    #Ways indexed by id
-    ways_d = {}
+def get_nodes(node1, node2, line):
+    max_angle = 0
+    min_angle = 360
+    left1 = None
+    right1 = None
+    for adj_node in node1.adjacent_nodes:
+        if node2.id == adj_node:
+            continue
+        adj_node_obj = osm_api.NodeGet(adj_node)
+        line_node = QLineF(node1.q_point(), adj_node_obj.q_point())
+        angle = line.angleTo(line_node)
+        if angle < min_angle:
+            min_angle = angle
+            right1 = adj_node
+        if angle > max_angle:
+            max_angle = angle
+            left1 = adj_node
 
-    #Ways id indexed by node.
-    node_ways = {}
+    print node1.id, left1, right1
 
-    #Nodes
-    nodes = {}
+    angle_left = (max_angle / 2) - 10
+    angle_right = (min_angle / 2) + 10
 
-    @classmethod
-    def get(cls, lat = False, long = False):
-        if not Ways.ways:
-            cls._get(lat, long)
+    hypo_len_left = DEST / math.sin(math.radians(angle_left))
+    hypo_len_right = DEST / math.sin(math.radians(angle_right))
 
-        return cls.ways
+    line_left = QLineF(line)
+    line_left.setLength(hypo_len_left)
+    line_right = QLineF(line)
+    line_right.setLength(hypo_len_right)
 
-    @classmethod
-    def _get(cls, lat, long):
-        #Get the highways 500 meters around of the given point.
-        #100 meters is about 0.0009 degrees on latitude
-        lat_shifted = lat + .0009 * 1
-        line = QLineF(QPointF(lat, long), QPointF(lat_shifted, long))
-        line.setAngle(135)
-        lat1 = line.y2()
-        long1 = line.x2()
-        line.setAngle(315)
-        lat2 = line.y2()
-        long2 = line.x2()
-
-        MyApi = OsmApi.OsmApi()
-        data = MyApi.Map(lat1, long1, lat2, long2)
-        ways = []
-        for obj in data:
-            if obj['type'] == 'way' and obj['data']['tag'].has_key('name'):
-                try:
-                    way_id = obj['data']['id']
-                    way_info = '%s (%s)' % (obj['data']['tag']['name'],
-                                    way_id)
-                    ways.append((way_info, way_id))
-                except:
-                      print 'XXX', obj
-                      
-        cls.ways = ways
-
-    @classmethod
-    def _getAll(cls, wayIds):
-        print wayIds
-        for way_id in wayIds:
-            if way_id in cls.ways_d.keys():
-                wayIds.remove(way_id)
-
-        MyApi = OsmApi.OsmApi()
-        ways = MyApi.WaysGet(wayIds)
-        cls.ways_d.update(ways)
-        for id, data in ways.iteritems():
-            for node in data['nd']:
-                ways = MyApi.NodeWays(node)
-                wayIds = []
-                for way in ways:
-                    try:
-                        wayIds.append(way['id'])
-                    except KeyError:
-                        print 'XXX', way
-                ways = MyApi.WaysGet(wayIds)
-                cls.ways_d.update(ways)
-                cls.node_ways[node] = ways.keys()
-
-        #Get all current ways nodes
-        nodes = []
-        for id, data in cls.ways_d.iteritems():
-            for node in data['nd']:
-                nodes.append(node)
-
-        cls.nodes = MyApi.NodesGet(nodes)
-
-    @classmethod
-    def getAll(cls, wayIds):
-        #If wy try to get a lot of ways, the operation fails.
-        #Get up to limit ways per call.
-        limit = 3
-        while len(wayIds) > 0:
-            print wayIds
-            cls._getAll(wayIds[:limit])
-            del wayIds[:limit]
+    line_left.setAngle(line_left.angle() + angle_left)
+    line_right.setAngle(line_right.angle() + angle_right)
+    
+    return (line_left.x2, line_left.y2), (line_right.x2, line_right.y2)
 
 
-class WayItem(QStandardItem):
-    def setId(self, id):
-        self.way_id = id
+def draw_lines(node1, node2):
+    node1 = osm_api.NodeGet(node1)
+    node2 = osm_api.NodeGet(node2)
+    print 'NODES:', node1.id, node2.id
 
-    def getId(self):
-        return self.way_id
- 
+    line1 = QLineF(node1.q_point(), node2.q_point())
+    line2 = QLineF(node2.q_point(), node1.q_point())
+
+    node1_nodes = get_nodes(node1, node2, line1)
+    node2_nodes = get_nodes(node2, node1, line2)
+    print 'NODE1 - nodes:', node1_nodes
+    print 'NODE2 - nodes:', node2_nodes
+    #raise NameError("Continuar aca")
+#XXX: ya tengo los nodos para dibujar las rectas, auqnue hay que probarlo.
+#los nodos del karl. Tomar en cuenta como las intersecciones en T o
+#los nodos que solo son para hacer una curva en el camino
+
+def do_karl(first_node, last_node):
+    first_node = int(first_node)
+    last_node = int(last_node)
+    ways_first = osm_api.NodeWays(first_node)
+    ways_last = osm_api.NodeWays(last_node)
+
+    print ways_first
+    print ways_last
+
+    way = False
+    for way_i in ways_first:
+        if way_i in ways_last:
+            way = osm_api.WayGet(way_i)
+            break
+
+    if not way:
+        raise NameError("Nodes don't belong to the same way")
+    
+    #Build the sequence of nodes in the order specified by the user
+    #This order could be different in the OSM DB, we could reverse it
+    node_ids = way.nodes
+    first_index = node_ids.index(first_node)
+    last_index = node_ids.index(last_node)
+    if last_index < first_index:
+        node_ids = node_ids[last_index:first_index + 1]
+        node_ids.reverse()
+    else:
+        node_ids = node_ids[first_index:last_index + 1]
+
+    #We need all the adjacents node to calculate the nodes of the ways
+    #of the KarlShrue schema
+    nodes = osm_api.NodesGet(node_ids)
+    for node in nodes:
+        node.get_adjacent_nodes()
+
+    print node_ids
+    for index in range(len(node_ids)-1):
+        draw_lines(node_ids[index], node_ids[index+1])
+
+    return True
+
 class Karl(QDialog):
     def __init__(self, args):
         super(Karl, self).__init__()
  
-        lat = float(args[1])
-        long = float(args[2])
-  
-        self.setGeometry(200, 200, 800, 500)
+        self.setGeometry(200, 200, 400, 200)
         self.setWindowTitle('Address numbers helper')
 
-        ways = Ways.get(lat, long)
-        model = QStandardItemModel() 
-        self.ways = []
-        ways_id = []
-        for way in ways:
-            item = WayItem(way[0])
-            item.setId(way[1])
-            item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled) 
-            item.setData(QVariant(Qt.Unchecked), Qt.CheckStateRole) 
-            self.ways.append(item)
-            model.appendRow(item) 
-            ways_id.append(way[1])
+        main_layout = QGridLayout(self)
 
-        Ways.getAll(ways_id)
-            
-        way_list = QListView(self)
-        way_list.setGeometry(QRect(0,0,200,500))
-        way_list.setModel(model)
+        main_layout.addWidget(QLabel('First node: '), 0, 0)
+        self.first = QLineEdit()
+        main_layout.addWidget(self.first, 0, 1)
+        if len(args) >= 2:
+            self.first.setText(args[1])
 
-        way_layout = QBoxLayout(QBoxLayout.TopToBottom)
-        way_layout.addWidget(QLabel('Select the ways to add addressing:'))
-        way_layout.addWidget(way_list)
-
-        addr_layout = QGridLayout()
-        addr_layout.addWidget(QLabel('Addressing parameters:'), 0, 0)
-
-        addr_layout.addWidget(QLabel('First number:'), 1, 0)
-        self.start = QLineEdit()
-        addr_layout.addWidget(self.start, 1, 1)
-
-        addr_layout.addWidget(QLabel('Interval number:'), 3, 0)
-        self.interval = QLineEdit()
-        addr_layout.addWidget(self.interval, 3, 1)
-
-        self.start_junction = QComboBox()
-        for way in ways:
-            self.start_junction.addItem(way[0], way[1])
-
-        addr_layout.addWidget(QLabel('Start junction:'), 4, 0)
-        addr_layout.addWidget(self.start_junction, 4, 1)
-
-        self.end_junction = QComboBox()
-        for way_id, way_data in Ways.ways_d.iteritems():
-            self.end_junction.addItem(way_data['tag']['name'])
-
-        addr_layout.addWidget(QLabel('# of blocks:'), 5, 0)
-        self.blocks = QLineEdit()
-        addr_layout.addWidget(self.blocks, 5, 1)
+        main_layout.addWidget(QLabel('Last node: '), 1, 0)
+        self.last = QLineEdit()
+        main_layout.addWidget(self.last, 1, 1)
+        if len(args) >= 3:
+            self.last.setText(args[2])
 
         button_ok = QPushButton('OK')
         button_cancel = QPushButton('Cancel')
-        addr_layout.addWidget(button_ok, 6, 0)
-        addr_layout.addWidget(button_cancel, 6, 1)
+        main_layout.addWidget(button_ok, 2, 0)
+        main_layout.addWidget(button_cancel, 2, 1)
 
         self.connect(button_ok, SIGNAL("clicked()"),
                         self, SLOT('accept()'))
         self.connect(button_cancel, SIGNAL("clicked()"),
                         self, SLOT('reject()'))
 
-        main_layout = QBoxLayout(QBoxLayout.LeftToRight, self)
-        main_layout.addLayout(way_layout)
-        main_layout.addLayout(addr_layout)
-
     def accept(self):
-        print 'ACCEPTED'
-
-        index = self.start_junction.currentIndex()
-        self.start_name = self.start_junction.itemData(index).toString()
-        self.n_blocks = self.start.text()
-        self.start_number = self.start.text()
-        self.interval_number =  self.interval.text()
-        print self.start_name, self.n_blocks, self.start_number, \
-                self.interval_number
-
-        wayIds = []
-        for way in self.ways:
-            if way.checkState() == Qt.Checked:
-                wayIds.append(way.getId())
-        Ways.getAll(wayIds)
-        for way_id in wayIds:
-            self.interpolate(way_id)
-
-        #QDialog.accept(self)
+        print 'ACCEPTED', self.first.text(), self.last.text()
+        do_karl(self.first.text(), self.last.text())
 
     def in_range(self, node):
         for way in Ways.node_ways[node]:
@@ -271,7 +349,7 @@ class Karl(QDialog):
 
 
     def reject(self):
-        print 'REJECTED', self.interval.text()
+        print 'REJECTED'
         sys.exit(0)
  
     def paintEvent(self, e):

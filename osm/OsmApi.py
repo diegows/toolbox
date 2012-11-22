@@ -68,7 +68,7 @@ class ApiError(Exception):
 ###########################################################################
 ## Main class                                                            ##
 
-class OsmApi:
+class OsmApi(object):
         
     def __init__(self,
         username = None,
