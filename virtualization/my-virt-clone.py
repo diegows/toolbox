@@ -19,6 +19,7 @@ from xml.dom.minidom import parseString
 
 import libvirt
 from fabric.api import run, local, put, env, execute
+from fabric.network import disconnect_all
 
 
 try:
@@ -103,4 +104,7 @@ for clone in clones:
     wait_guest(template)
 
     execute(config_guest, host=template, template=template, guest=clone)
+    #Because Fabric caches connection using template name, but must be sure
+    #that they are close at the end of this loop.
+    disconnect_all()
 
