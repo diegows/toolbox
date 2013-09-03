@@ -31,7 +31,7 @@ except IndexError:
 
 
 def wait_guest(hostname):
-    for i in range(10):
+    for i in range(20):
         try:
             sock = socket.socket()
             sock.settimeout(3)

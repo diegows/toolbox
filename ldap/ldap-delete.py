@@ -24,4 +24,4 @@ objs = new_ldap.search_s(options.searchbase, ldap.SCOPE_SUBTREE, options.filter)
 for obj in objs:
     dn = obj[0]
     print dn
-    new_ldap.delete_s(dn)
+    #new_ldap.delete_s(dn)
