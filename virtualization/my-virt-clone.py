@@ -31,7 +31,7 @@ except IndexError:
 
 
 def wait_guest(hostname):
-    for i in range(20):
+    for i in range(60):
         try:
             sock = socket.socket()
             sock.settimeout(3)
@@ -64,11 +64,18 @@ def config_guest(**kwargs):
     etc_hosts = etc_hosts_tmpl % guest_info
     etc_hosts = StringIO(etc_hosts)
 
-    etc_hostname = etc_hostname_tmpl % (guest)
-    etc_hostname = StringIO(etc_hostname)
+    if template[:6] in [ 'centos', 'fedora', 'redhat' ]:
+        hostname_tmpl = sysconfig_hostname_tmpl
+        hostname_path = "/etc/sysconfig/network"
+    else:
+        hostname_tmpl = etc_hostname_tmpl
+        hostname_path = "/etc/hostname"
+
+    hostname = hostname_tmpl % (guest)
+    hostname = StringIO(hostname)
 
     put(etc_hosts, "/etc/hosts")
-    put(etc_hostname, "/etc/hostname")
+    put(hostname, hostname_path)
     run("reboot")
 
 img_path_tmpl = "/var/lib/libvirt/images/%s.qcow2"
@@ -89,6 +96,10 @@ ff02::2 ip6-allrouters
 etc_hostname_tmpl = """%s
 """
 
+sysconfig_hostname_tmpl = """NETWORKING=yes
+HOSTNAME=%s
+"""
+
 env.user = 'root'
 
 virt_conn = libvirt.open("qemu:///system")
@@ -107,4 +118,4 @@ for clone in clones:
     #Because Fabric caches connection using template name, but must be sure
     #that they are close at the end of this loop.
     disconnect_all()
-
+    sleep(5)
