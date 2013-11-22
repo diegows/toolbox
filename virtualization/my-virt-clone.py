@@ -64,7 +64,7 @@ def config_guest(**kwargs):
     etc_hosts = etc_hosts_tmpl % guest_info
     etc_hosts = StringIO(etc_hosts)
 
-    if template[:6] in [ 'centos', 'fedora', 'redhat' ]:
+    if template[:6] in [ 'centos', 'redhat' ]:
         hostname_tmpl = sysconfig_hostname_tmpl
         hostname_path = "/etc/sysconfig/network"
     else:
@@ -108,14 +108,22 @@ for clone in clones:
     img_path = img_path_tmpl % (clone)
     clone_cmd = clone_cmd_tmpl % (template, clone, img_path)
 
-    local(clone_cmd)
-    domain_set_bridge(clone)
-    local("virsh start " + clone)
+    try:
+        virt_conn.lookupByName(clone)
+        print "Already exists, configuring."
+    except libvirt.libvirtError:
+        print "Cloning..."
+        local(clone_cmd)
+        domain_set_bridge(clone)
+        local("virsh start " + clone)
+
 
     wait_guest(template)
 
     execute(config_guest, host=template, template=template, guest=clone)
+
     #Because Fabric caches connection using template name, but must be sure
     #that they are close at the end of this loop.
     disconnect_all()
     sleep(5)
+
