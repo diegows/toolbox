@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Download maximum temperature records from the AEMET OpenData API.
+"""Download temperature records (max and min) from the AEMET OpenData API.
 
-Fetches daily maximum temperature (Tmax) data from AEMET OpenData for a
+Fetches daily maximum and minimum temperature data from AEMET OpenData for a
 given weather station and date range. Can also compute frequency tables
 to count how many days fall within specified temperature ranges.
 
@@ -11,24 +11,24 @@ https://opendata.aemet.es/centrodedescargas/altaUsuario).
 Usage examples:
 
   # List all available stations (find your IDEMA code)
-  aemet-tmax.py --list-stations
-  aemet-tmax.py --list-stations | grep -i madrid
+  aemet-temps.py --list-stations
+  aemet-temps.py --list-stations | grep -i madrid
 
-  # Fetch Tmax for a station and date range (table output)
-  aemet-tmax.py -s 3129 --start 2024-01-01 --end 2024-01-31
+  # Fetch temps for a station and date range (table output)
+  aemet-temps.py -s 3129 --start 2024-01-01 --end 2024-01-31
 
   # Same, but CSV output (pipe-friendly, errors go to stderr)
-  aemet-tmax.py -s 3129 --start 2024-01-01 --end 2024-03-31 --csv > tmax.csv
+  aemet-temps.py -s 3129 --start 2024-01-01 --end 2024-03-31 --csv > temps.csv
 
   # Frequency table from a previously saved CSV
-  aemet-tmax.py -i tmax.csv --freq "30-35,35-40,40-50"
+  aemet-temps.py -i temps.csv --freq "30-35,35-40,40-50"
 
   # Frequency table filtered to a specific date range
-  aemet-tmax.py -i tmax.csv --freq "28-32,33-35,36-40" \\
+  aemet-temps.py -i temps.csv --freq "28-32,33-35,36-40" \\
       --freq-start 2024-06-01 --freq-end 2024-09-30
 
   # Frequency table as CSV
-  aemet-tmax.py -i tmax.csv --freq "30-35,35-40,40-50" --csv
+  aemet-temps.py -i temps.csv --freq "30-35,35-40,40-50" --csv
 
 CLI reference:
 
@@ -37,10 +37,12 @@ CLI reference:
   --end YYYY-MM-DD        End date for data retrieval
   --list-stations         List all AEMET stations and exit
   --csv                   Output CSV instead of a formatted table
-  --input, -i FILE        Read from a CSV file (date,tmax) instead of AEMET
+  --input, -i FILE        Read from a CSV file (date,max,min) instead of AEMET
   --freq RANGES           Compute frequency table for temperature ranges
                           given as comma-separated lo-hi pairs, e.g.
                           '30-35,35-40,40-50'. Ranges are [lo, hi).
+  --freq-field FIELD      Which field to use for frequency table: max or min
+                          (default: max)
   --freq-start YYYY-MM-DD Filter data from this date before computing freq
   --freq-end YYYY-MM-DD   Filter data up to this date before computing freq
 
@@ -69,6 +71,27 @@ def warn(msg):
     print(msg, file=sys.stderr)
 
 
+def _urlopen_with_retry(req, max_attempts=5):
+    """urlopen with retry on rate limits and transient errors (timeouts, connection resets)."""
+    for attempt in range(max_attempts):
+        try:
+            return urllib.request.urlopen(req, timeout=30)
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < max_attempts - 1:
+                wait = 30 * (attempt + 1)
+                warn(f"Rate limited, waiting {wait}s (attempt {attempt + 1}/{max_attempts})...")
+                time.sleep(wait)
+                continue
+            raise
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            if attempt < max_attempts - 1:
+                wait = 10 * (attempt + 1)
+                warn(f"Connection error: {e} — retrying in {wait}s (attempt {attempt + 1}/{max_attempts})...")
+                time.sleep(wait)
+                continue
+            raise
+
+
 def aemet_request(path):
     """Two-step AEMET request: first call gets a datos URL, second fetches data."""
     api_key = os.environ.get("AEMET_API_KEY")
@@ -80,21 +103,17 @@ def aemet_request(path):
     url = f"{BASE_URL}{path}{sep}api_key={api_key}"
 
     req = urllib.request.Request(url)
-    for attempt in range(5):
-        try:
-            with urllib.request.urlopen(req) as resp:
-                meta = json.loads(resp.read().decode("utf-8"))
-            break
-        except urllib.error.HTTPError as e:
-            if e.code == 429 and attempt < 4:
-                wait = 30 * (attempt + 1)
-                warn(f"Rate limited, waiting {wait}s (attempt {attempt + 1}/5)...")
-                time.sleep(wait)
-                continue
-            warn(f"Error: HTTP {e.code} on {url}")
-            body = e.read().decode("utf-8", errors="replace")
-            warn(body)
-            sys.exit(1)
+    try:
+        with _urlopen_with_retry(req) as resp:
+            meta = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        warn(f"Error: HTTP {e.code} on {url}")
+        body = e.read().decode("utf-8", errors="replace")
+        warn(body)
+        sys.exit(1)
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        warn(f"Error: {e} on {url}")
+        sys.exit(1)
 
     datos_url = meta.get("datos")
     if not datos_url:
@@ -104,10 +123,10 @@ def aemet_request(path):
 
     req2 = urllib.request.Request(datos_url)
     try:
-        with urllib.request.urlopen(req2) as resp:
+        with _urlopen_with_retry(req2) as resp:
             raw = resp.read()
-    except urllib.error.HTTPError as e:
-        warn(f"Error: HTTP {e.code} fetching data from {datos_url}")
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as e:
+        warn(f"Error fetching data from {datos_url}: {e}")
         return None
 
     try:
@@ -135,7 +154,7 @@ def list_stations():
         print(f"{idema:<10} {name:<40} {prov:<20} {alt:>8}")
 
 
-def parse_tmax(val):
+def parse_temp(val):
     """Parse AEMET temperature value (comma as decimal separator)."""
     if not val:
         return None
@@ -156,15 +175,15 @@ def date_chunks(start, end, days=30):
     return chunks
 
 
-def fetch_tmax(station, start, end):
-    """Fetch daily Tmax for a station over a date range, chunking if needed."""
+def fetch_temps(station, start, end):
+    """Fetch daily Tmax and Tmin for a station over a date range, chunking if needed."""
     fmt = "%Y-%m-%dT00:00:00UTC"
     chunks = date_chunks(start, end)
     all_records = []
 
     for i, (c_start, c_end) in enumerate(chunks):
         if i > 0:
-            time.sleep(3)
+            time.sleep(5)
         s = c_start.strftime(fmt)
         e = c_end.strftime(fmt)
         path = f"/api/valores/climatologicos/diarios/datos/fechaini/{s}/fechafin/{e}/estacion/{station}"
@@ -178,9 +197,10 @@ def fetch_tmax(station, start, end):
     results = []
     for rec in all_records:
         fecha = rec.get("fecha", "")
-        tmax = parse_tmax(rec.get("tmax"))
-        if tmax is not None:
-            results.append((fecha, tmax))
+        tmax = parse_temp(rec.get("tmax"))
+        tmin = parse_temp(rec.get("tmin"))
+        if tmax is not None or tmin is not None:
+            results.append((fecha, tmax, tmin))
 
     results.sort(key=lambda x: x[0])
     return results
@@ -196,18 +216,22 @@ def parse_ranges(spec):
 
 
 def read_csv_input(path):
-    """Read a CSV file with date,tmax columns and return list of (date, tmax)."""
+    """Read a CSV file with date,max,min columns and return list of (date, max, min)."""
     results = []
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            tmax = row.get("tmax")
             fecha = row.get("date", "")
-            if tmax is not None:
-                try:
-                    results.append((fecha, float(tmax)))
-                except ValueError:
-                    pass
+            try:
+                tmax = float(row["max"]) if row.get("max") else None
+            except (ValueError, KeyError):
+                tmax = None
+            try:
+                tmin = float(row["min"]) if row.get("min") else None
+            except (ValueError, KeyError):
+                tmin = None
+            if tmax is not None or tmin is not None:
+                results.append((fecha, tmax, tmin))
     return results
 
 
@@ -223,7 +247,7 @@ def frequency_table(values, ranges):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Download Tmax records from AEMET OpenData")
+    parser = argparse.ArgumentParser(description="Download temperature records (max/min) from AEMET OpenData")
     parser.add_argument("--station", "-s", help="IDEMA station code (e.g. 3129, B228)")
     parser.add_argument("--start", help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end", help="End date (YYYY-MM-DD)")
@@ -231,6 +255,8 @@ def main():
     parser.add_argument("--csv", action="store_true", help="Output CSV instead of table")
     parser.add_argument("--input", "-i", help="Read data from a CSV file instead of fetching from AEMET")
     parser.add_argument("--freq", help="Compute frequency table for given ranges (e.g. '30-35,35-40,40-50')")
+    parser.add_argument("--freq-field", choices=["max", "min"], default="max",
+                        help="Which field to use for frequency table (default: max)")
     parser.add_argument("--freq-start", help="Filter data from this date before computing frequency (YYYY-MM-DD)")
     parser.add_argument("--freq-end", help="Filter data up to this date before computing frequency (YYYY-MM-DD)")
     args = parser.parse_args()
@@ -257,7 +283,7 @@ def main():
         if start > end:
             parser.error("--start must be before --end")
 
-        results = fetch_tmax(args.station, start, end)
+        results = fetch_temps(args.station, start, end)
 
         if not results:
             warn("No data found for the given station and date range.")
@@ -268,13 +294,16 @@ def main():
         if args.freq_start or args.freq_end:
             fs = args.freq_start or "0000-00-00"
             fe = args.freq_end or "9999-99-99"
-            filtered = [(d, t) for d, t in results if fs <= d <= fe]
+            filtered = [(d, tmax, tmin) for d, tmax, tmin in results if fs <= d <= fe]
             if not filtered:
                 warn("No data in the specified --freq-start/--freq-end range.")
                 sys.exit(1)
 
         ranges = parse_ranges(args.freq)
-        values = [tmax for _, tmax in filtered]
+        if args.freq_field == "min":
+            values = [tmin for _, _, tmin in filtered if tmin is not None]
+        else:
+            values = [tmax for _, tmax, _ in filtered if tmax is not None]
         counts = frequency_table(values, ranges)
 
         period_start = filtered[0][0]
@@ -286,6 +315,7 @@ def main():
                 print(f"{lo:g},{hi:g},{counts[(lo, hi)]}")
         else:
             print(f"Period:  {period_start} to {period_end} ({len(filtered)} days)")
+            print(f"Field:   {args.freq_field}")
             print()
             print(f"{'Range (C)':<16}{'Days':>6}")
             print(f"{'----------':<16}{'-----':>6}")
@@ -296,17 +326,21 @@ def main():
         return
 
     if args.csv:
-        print("date,tmax")
-        for fecha, tmax in results:
-            print(f"{fecha},{tmax}")
+        print("date,max,min")
+        for fecha, tmax, tmin in results:
+            tmax_s = f"{tmax}" if tmax is not None else ""
+            tmin_s = f"{tmin}" if tmin is not None else ""
+            print(f"{fecha},{tmax_s},{tmin_s}")
     else:
         print(f"Station: {args.station}")
         print(f"Period:  {args.start} to {args.end}")
         print()
-        print(f"{'Date':<16}{'Tmax (C)':>8}")
-        print(f"{'----------':<16}{'--------':>8}")
-        for fecha, tmax in results:
-            print(f"{fecha:<16}{tmax:>8.1f}")
+        print(f"{'Date':<16}{'Max (C)':>8}{'Min (C)':>8}")
+        print(f"{'----------':<16}{'-------':>8}{'-------':>8}")
+        for fecha, tmax, tmin in results:
+            tmax_s = f"{tmax:>8.1f}" if tmax is not None else f"{'—':>8}"
+            tmin_s = f"{tmin:>8.1f}" if tmin is not None else f"{'—':>8}"
+            print(f"{fecha:<16}{tmax_s}{tmin_s}")
 
 
 if __name__ == "__main__":
